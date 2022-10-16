@@ -143,11 +143,13 @@ namespace NintendoSpy
             _reader.ControllerStateChanged += reader_ControllerStateChanged;
             _reader.ControllerDisconnected += reader_ControllerDisconnected;
 
+            /*
             try {
                 _keybindings = new Keybindings (Keybindings.XML_FILE_PATH, _reader);
             } catch (ConfigParseException) {
                 MessageBox.Show ("Error parsing keybindings.xml. Not binding any keys to gamepad inputs");
             }
+            */
 
             MassBlinkReductionEnabled = Properties.Settings.Default.MassFilter;
             AnalogBlinkReductionEnabled = Properties.Settings.Default.AnalogFilter;

@@ -100,7 +100,13 @@ namespace NintendoSpy
 
             Name = readStringAttr (doc.Root, "name");
             Author = readStringAttr (doc.Root, "author");
-            Type = InputSource.ALL.First (x => x.TypeTag == readStringAttr (doc.Root, ("type")));
+            var type = readStringAttr(doc.Root, ("type"));
+            if (!InputSource.AllowedNames.Contains(type))
+            {
+                throw new ConfigParseException("Illegal value specified for skin attribute 'type'.");
+            }
+
+            Type = InputSource.ALL.First (x => x.TypeTag == type);
 
             if (Type == null) {
                 throw new ConfigParseException ("Illegal value specified for skin attribute 'type'.");

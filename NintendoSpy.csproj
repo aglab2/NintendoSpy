@@ -23,6 +23,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
     <PlatformTarget>x64</PlatformTarget>
@@ -32,6 +33,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
     <PlatformTarget>x86</PlatformTarget>
@@ -86,13 +88,25 @@
     </ApplicationDefinition>
     <Compile Include="InputSource.cs" />
     <Compile Include="Keybindings.cs" />
+    <Compile Include="MIPSInterpreter\Converter.cs" />
+    <Compile Include="MIPSInterpreter\Decompiler.cs" />
+    <Compile Include="MIPSInterpreter\DecompManager.cs" />
+    <Compile Include="MIPSInterpreter\Instruction.cs" />
+    <Compile Include="MIPSInterpreter\Interpreter.cs" />
+    <Compile Include="MIPSInterpreter\Memory.cs" />
+    <Compile Include="MIPSInterpreter\Types.cs" />
+    <Compile Include="Process\DeepPointer.cs" />
+    <Compile Include="Process\ProcessExtensions.cs" />
+    <Compile Include="Process\WinAPI.cs" />
     <Compile Include="Readers\ControllerStateBuilder.cs" />
     <Compile Include="Readers\ControllerState.cs" />
     <Compile Include="Readers\DelayedControllerReader.cs" />
+    <Compile Include="Readers\EmulatorReader.cs" />
     <Compile Include="Readers\GameCube.cs" />
     <Compile Include="Readers\ClassicController.cs" />
     <Compile Include="Readers\IControllerReader.cs" />
     <Compile Include="Readers\BlinkReductionFilter.cs" />
+    <Compile Include="Readers\MagicManager.cs" />
     <Compile Include="Readers\Nintendo64.cs" />
     <Compile Include="Readers\SerialControllerReader.cs" />
     <Compile Include="Readers\GamepadReader.cs" />
@@ -618,6 +632,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
        Other similar extension points exist, see Microsoft.Common.targets.

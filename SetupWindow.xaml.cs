@@ -12,6 +12,7 @@ using NintendoSpy.Readers;
 using System.ComponentModel;
 using System.IO;
 using System.Text;
+using System.Diagnostics;
 
 namespace NintendoSpy
 {
@@ -72,7 +73,7 @@ namespace NintendoSpy
             updatePortList ();
             _vm.Ports.SelectFirst ();
             _vm.XIAndGamepad.SelectFirst();
-            _vm.Sources.SelectId(Properties.Settings.Default.Source);
+            _vm.Sources.SelectId(0);
             _vm.Skins.SelectId(Properties.Settings.Default.Skin);
         }
 
@@ -83,13 +84,39 @@ namespace NintendoSpy
             MessageBox.Show (msg.ToString (), "NintendoSpy", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
-        void updatePortList () {
-            _vm.Ports.UpdateContents (SerialPort.GetPortNames ());
+        static string[] processNames = {
+            "project64", "project64d",
+            "mupen64-rerecording",
+            "mupen64-pucrash",
+            "mupen64_lua",
+            "mupen64-wiivc",
+            "mupen64-RTZ",
+            "mupen64-rerecording-v2-reset",
+            "mupen64-rrv8-avisplit",
+            "mupen64-rerecording-v2-reset" };
+
+        void updatePortList () 
+        {
+            List<Process> foundProcesses = new List<Process>();
+            foreach (string name in processNames)
+            {
+                foreach (Process p in Process.GetProcessesByName(name).Where(p => !p.HasExited))
+                {
+                    foundProcesses.Add(p);
+                }
+            }
+
+            _vm.Ports.UpdateContents (foundProcesses.Select(p => p.Id.ToString()));
         }
 
         void updateGamepadList()
         {
-            _vm.XIAndGamepad.UpdateContents(GamepadReader.GetDevices());
+            try
+            {
+                _vm.XIAndGamepad.UpdateContents(GamepadReader.GetDevices());
+            }
+            catch(Exception)
+            { }
         }
 
         void updateXIList()
@@ -117,7 +144,8 @@ namespace NintendoSpy
                     reader = _vm.Sources.SelectedItem.BuildReader(_vm.XIAndGamepad.SelectedItem.ToString());
                 }
                 else {
-                    reader = _vm.Sources.SelectedItem.BuildReader(_vm.Ports.SelectedItem);
+                    var item = _vm.Ports.SelectedItem is object ? _vm.Ports.SelectedItem : (string) _vm.Ports.Items.GetItemAt(0);
+                    reader = _vm.Sources.SelectedItem.BuildReader(item);
                 }
                 if (_vm.DelayInMilliseconds > 0)
                     reader = new DelayedControllerReader(reader, _vm.DelayInMilliseconds);
