@@ -8,10 +8,7 @@ namespace MIPSInterpreter
 {
     class Decompiler
     {
-        public Decompiler()
-        { }
-
-        public Instruction Decompile(uint inst)
+        public static Instruction Decode(uint inst)
         {
             Instruction ret = new Instruction();
 

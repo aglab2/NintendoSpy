@@ -15,7 +15,6 @@ namespace MIPSInterpreter
 
         delegate void Performer(Instruction inst);
 
-        readonly Decompiler decompiler = new Decompiler();
         readonly Memory memory;
         readonly Dictionary<Cmd, Performer> cmdToFunc;
 
@@ -390,7 +389,7 @@ namespace MIPSInterpreter
             Instruction? inst = null;
             try
             {
-                inst = decompiler.Decompile(cmd);
+                inst = Decompiler.Decode(cmd);
             }
             catch(Exception) { }
             pc += 4;

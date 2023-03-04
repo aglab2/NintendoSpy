@@ -13,7 +13,7 @@ namespace MIPSInterpreter
         {
             uint[] mem;
             {
-                byte[] bytes = File.ReadAllBytes("C:\\Data\\SM64StarDisplay\\ram_dump\\ze.bin");
+                byte[] bytes = File.ReadAllBytes("D:\\git\\SM64StarDisplay\\ram_dump\\ss3.bin");
                 int size = bytes.Count() / 4;
                 mem = new uint[size];
                 for (int idx = 0; idx < size; idx++)
@@ -28,7 +28,7 @@ namespace MIPSInterpreter
             }
 
             DecompManager dm = new DecompManager(mem);
-            Console.WriteLine($"gSaveBuffer={dm.gControllerPads:X} osContGetReadDataInst={dm.osContGetReadDataInst:X} osContGetReadDataCallPtr={dm.osContGetReadDataCallPtr:X}");
+            Console.WriteLine($"osContPifRam={dm.osContPifRam:X}");
         }
     }
 }

@@ -1,9 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace MIPSInterpreter
 {
@@ -11,7 +8,7 @@ namespace MIPSInterpreter
     {
         public int? interpretedInstructionsOffset;
         public byte[] interpretedInstructions = null;
-        public int? gControllerPads = null;
+        public int? osContPifRam = null;
 
         // Magic regarding RAM dynamic decompiling
         static unsafe List<int> IndicesOf(uint[] arrayToSearchThrough, uint[] patternToFind)
@@ -58,39 +55,42 @@ namespace MIPSInterpreter
             return list;
         }
 
-        // Vanilla
-        static readonly int OsContGetReadData1Offset = 5;
-        static readonly uint[] OsContGetReadData1 = new uint[]
+        static readonly uint[] OsGetCount = new uint[]
         {
-            0xAFAE000C, 0x19E00021, 0xAFA00000, 0x8FB9000C, 0x27B80004, 0x8B210000, 0x9B210003, 0xAF010000, 
-            0x8B290004, 0x9B290007, 0xAF090004, 0x93AA0006, 0x314B00C0, 0x000B6103
+            0x40024800, 0x03E00008, 0x00000000
         };
 
-        // MVC
-        static readonly int OsContGetReadData2Offset = 6;
-        static readonly uint[] OsContGetReadData2 = new uint[]
+        static readonly uint[] OsDisableInt = new uint[]
         {
-            0x19C0001A, 0x00001825, 0x27A60004, 0x88410000, 0x98410003, 0xACC10000, 0x88580004, 0x98580007,
-            0xACD80004, 0x93B90006, 0x332800C0, 0x00084903, 0x312A00FF, 0x15400007, 0xA0890004, 0x97AB0008,
-            0xA48B0000, 0x83AC000A, 0xA08C0002, 0x83AD000B, 0xA08D0003, 0x90AE0000, 0x24630001, 0x24420008,
-            0x006E082A, 0x1420FFE9, 0x24840006, 0x03E00008, 0x27BD0010
+            0x40086000, 0x2401FFFE, 0x01014824, 0x40896000, 0x31020001, 0x00000000, 0x03E00008, 0x00000000
         };
 
-        // WSA
-        static readonly int OsContGetReadData3Offset = 6;
-        static readonly uint[] OsContGetReadData3 = new uint[]
+        static readonly uint[] OsDisableInt2 = new uint[]
         {
-            0x90620002, 0x94680004, 0x00021103, 0x3042000C, 0x80670006, 0x80660007,
-            0x24A50001, 0x14400004, 0xA0820006, 0xA4880000, 0xA0870002, 0xA0860003
+            0x40086000, 0x2401FFFE, 0x01014824, 0x40896000, 0x31020001, 0x8D480000, 0x3108FF00, 0x110B000E
         };
 
-        static uint[][] OsContGetReadData = new uint[][]
+        static readonly uint[] OsRestoreInt = new uint[]
         {
-            OsContGetReadData1, OsContGetReadData2, OsContGetReadData3
+            0x40086000, 0x01044025, 0x40886000, 0x00000000, 0x00000000, 0x03E00008, 0x00000000
         };
-        static int[] OsContGetReadDataOffsets = new int[]
+
+        static readonly uint[] OsWritebackDCache = new uint[]
         {
-            OsContGetReadData1Offset, OsContGetReadData2Offset, OsContGetReadData3Offset
+            0x18A00011, 0x00000000, 0x240B2000, 0x00AB082B, 0x1020000F, 0x00000000, 0x00804025, 0x00854821,
+            0x0109082B, 0x10200008, 0x00000000, 0x310A000F, 0x2529FFF0, 0x010A4023, 0xBD190000, 0x0109082B,
+            0x1420FFFD, 0x25080010, 0x03E00008, 0x00000000, 0x3C088000, 0x010B4821, 0x2529FFF0, 0xBD010000,
+            0x0109082B, 0x1420FFFD, 0x25080010, 0x03E00008, 0x00000000
+        };
+
+        static readonly uint[] OsInvalDCache = new uint[]
+        {
+            0x18A0001F, 0x00000000, 0x240B2000, 0x00AB082B, 0x1020001D, 0x00000000, 0x00804025, 0x00854821,
+            0x0109082B, 0x10200016, 0x00000000, 0x310A000F, 0x11400007, 0x2529FFF0, 0x010A4023, 0xBD150000,
+            0x0109082B, 0x1020000E, 0x00000000, 0x25080010, 0x312A000F, 0x11400006, 0x00000000, 0x012A4823,
+            0xBD350010, 0x0128082B, 0x14200005, 0x00000000, 0xBD110000, 0x0109082B, 0x1420FFFD, 0x25080010,
+            0x03E00008, 0x00000000, 0x3C088000, 0x010B4821, 0x2529FFF0, 0xBD010000, 0x0109082B, 0x1420FFFD,
+            0x25080010, 0x03E00008, 0x00000000
         };
 
         static bool IsVAddr(uint addr)
@@ -105,73 +105,207 @@ namespace MIPSInterpreter
             return true;
         }
 
-        public DecompManager(uint[] mem)
+        static List<int> FindAllJumpsTo(uint[] mem, int pos)
         {
-            List<int> osContGetReadDataPositions = new List<int>();
-            for (int i = 0; i < OsContGetReadData.Length; i++)
+            Instruction jmpInst = new Instruction
             {
-                List<int> positions = IndicesOf(mem, OsContGetReadData[i]);
-                foreach (int pos in positions)
+                cmd = Cmd.JAL,
+                jump = (uint)(4 * pos)
+            };
+            uint jmpInstVal = Converter.ToUInt(jmpInst);
+            return FindAll(mem, jmpInstVal);
+        }
+
+        static SortedSet<int> FindAllJumpsTo(uint[] mem, List<int> poses)
+        {
+            SortedSet<int> jumps = new SortedSet<int>();
+            foreach (int pos in poses)
+            {
+                foreach (var jump in FindAllJumpsTo(mem, pos))
                 {
-                    osContGetReadDataPositions.Add(pos - OsContGetReadDataOffsets[i]);
+                    jumps.Add(jump);
                 }
             }
 
-            if (osContGetReadDataPositions.Count() == 0)
-                throw new ArgumentException("Failed to find osContGetReadData!");
+            return jumps;
+        }
 
-            foreach (int osContGetReadDataPos in osContGetReadDataPositions)
+        static SortedSet<int> FindAllJumpsTo(uint[] mem, uint[] data)
+        {
+            return FindAllJumpsTo(mem, IndicesOf(mem, data));
+        }
+
+        static int CountJumps(uint[] mem, int regionStart, int regionEnd)
+        {
+            int jmpCount = 0;
+            for (int i = regionStart; i <= regionEnd; i++)
             {
-                Instruction jmpInst = new Instruction
+                var inst = Decompiler.Decode(mem[i]);
+                if (inst.cmd == Cmd.JAL)
                 {
-                    cmd = Cmd.JAL,
-                    jump = (uint)(4 * osContGetReadDataPos)
-                };
-                uint jmpInstVal = Converter.ToUInt(jmpInst);
-                var osContGetReadDataJmpOffsets = FindAll(mem, jmpInstVal);
-
-                foreach (uint osContGetReadDataJmpOffset in osContGetReadDataJmpOffsets)
-                {
-                    try
-                    {
-                        uint osContGetReadDataJmpVAddr = 0x80000000 | (osContGetReadDataJmpOffset << 2);
-                        Interpreter interpreter = new Interpreter(mem);
-                        uint instructionsToInterpretCount = 16;
-                        uint bytesToInterpretCount = instructionsToInterpretCount << 2;
-                        interpreter.pc = osContGetReadDataJmpVAddr - bytesToInterpretCount;
-
-                        Instruction? inst;
-                        for (int i = 0; i < instructionsToInterpretCount + 2 /*JAL + delay slot*/; i++)
-                        {
-                            inst = interpreter.GetInstruction();
-                            if (inst.HasValue)
-                                interpreter.Execute(inst.Value);
-                        }
-
-                        int addr = interpreter.gpr[(int)Register.A0];
-                        if (IsVAddr((uint)addr))
-                        {
-                            var interpretedInstructionsStart = osContGetReadDataJmpOffset - instructionsToInterpretCount;
-                            interpretedInstructionsOffset = (int) (interpretedInstructionsStart << 2);
-                            var interpetedSegment = new ArraySegment<uint>(mem, (int)interpretedInstructionsStart, (int)instructionsToInterpretCount);
-
-                            interpretedInstructions = new byte[instructionsToInterpretCount << 2];
-                            var interpretedInstructionsIdx = 0;
-                            foreach (uint num in interpetedSegment)
-                            {
-                                Array.Copy(BitConverter.GetBytes(num), 0, interpretedInstructions, interpretedInstructionsIdx, 4);
-                                interpretedInstructionsIdx += 4;
-                            }
-
-                            gControllerPads = addr;
-                            return;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Exception happened when parsing PC 0x{osContGetReadDataJmpOffset:X}: {ex}");
-                    }
+                    jmpCount++;
                 }
+            }
+
+            return jmpCount;
+        }
+
+        static uint GetSecondArgumentToJAL(uint[] mem, uint off)
+        {
+            uint vaddr = 0x80000000 | (off << 2);
+            Interpreter interpreter = new Interpreter(mem);
+            const uint InstructionsToInterpretCount = 16;
+            const uint BytesToInterpretCount = InstructionsToInterpretCount << 2;
+            interpreter.pc = vaddr - BytesToInterpretCount;
+
+            Instruction? inst;
+            for (int i = 0; i < InstructionsToInterpretCount + 2 /*JAL + delay slot*/; i++)
+            {
+                inst = interpreter.GetInstruction();
+                if (inst.HasValue)
+                    interpreter.Execute(inst.Value);
+            }
+
+            return (uint) interpreter.gpr[(int)Register.A1];
+        }
+
+        static bool IsPrologInstruction(Instruction inst)
+        {
+            return inst.cmd == Cmd.ADDIU && inst.rt == Register.SP && inst.rs == Register.SP && inst.imm < 0;
+        }
+
+        static int FindProlog(uint[] mem, int start, int maxScanLength)
+        {
+            for (int i = start - 1; i > start - maxScanLength; i--)
+            {
+                var inst = Decompiler.Decode(mem[i]);
+                if (IsPrologInstruction(inst))
+                {
+                    return i;
+                }
+            }
+
+            throw new ArgumentException("Failed to detect the prolog");
+        }
+
+        public DecompManager(uint[] mem)
+        {
+            SortedSet<int> osGetCountJumps = FindAllJumpsTo(mem, OsGetCount);
+            var disableOff = IndicesOf(mem, OsDisableInt);
+            foreach (int off in IndicesOf(mem, OsDisableInt2))
+            {
+                disableOff.Add(off - 4);
+            }
+            SortedSet<int> osDisableIntJumps = FindAllJumpsTo(mem, disableOff);
+            SortedSet<int> osRestoreIntJumps = FindAllJumpsTo(mem, OsRestoreInt);
+            // Discover all osGetTime function that look like calls to 3 functions
+            // OSTime osGetTime()
+            // {
+            //    ... saveMask = __osDisableInt();
+            //    ... tmptime = osGetCount();
+            //    ... __osRestoreInt(saveMask);
+            // }
+            List<int> osGetTimes = new List<int>();
+            foreach (int regionStart in osDisableIntJumps)
+            {
+                try
+                {
+                    const int MaxRegionLength = 0x18;
+                    var view = osRestoreIntJumps.GetViewBetween(regionStart, regionStart + MaxRegionLength);
+                    if (view.Count == 0)
+                        continue;
+
+                    var regionEnd = view.First();
+                    view = osGetCountJumps.GetViewBetween(regionStart, regionEnd);
+                    if (view.Count == 0)
+                        continue;
+
+                    // Must be only calls to __osDisableInt + osGetCount + __osRestoreInt
+                    if (3 != CountJumps(mem, regionStart, regionEnd))
+                        continue;
+
+                    osGetTimes.Add(FindProlog(mem, regionStart, 0x10));
+                }
+                catch (Exception) { }
+            }
+
+            SortedSet<int> osWritebackDCacheJumps = FindAllJumpsTo(mem, OsWritebackDCache);
+            SortedSet<int> osInvalDCacheJumps = FindAllJumpsTo(mem, OsInvalDCache);
+
+            // Discover all __osSiRawStartDma that looks like call to 3 functions with 4th being after prolog
+            //  s32 __osSiRawStartDma(s32 direction, void* dramAddr)
+            // {
+            //   ... if (__osSiDeviceBusy())
+            //   ...    osWritebackDCache(dramAddr, 64);
+            //   ... IO_WRITE(SI_DRAM_ADDR_REG, osVirtualToPhysical(dramAddr));
+            //   ...     osInvalDCache(dramAddr, 64);
+            // }
+            List<int> osSiRawStartDmas = new List<int>();
+            foreach (int regionStart in osWritebackDCacheJumps)
+            {
+                try
+                {
+                    const int MaxRegionLength = 0x18;
+                    var view = osInvalDCacheJumps.GetViewBetween(regionStart, regionStart + MaxRegionLength);
+                    if (view.Count == 0)
+                        continue;
+
+                    int regionEnd = view.First();
+
+                    // Must be only calls to osWritebackDCache + osVirtualToPhysical + osInvalDCache
+                    if (3 != CountJumps(mem, regionStart, regionEnd))
+                        continue;
+
+                    osSiRawStartDmas.Add(FindProlog(mem, regionStart, 0x20));
+                }
+                catch (Exception) { }
+            }
+
+            SortedSet<int> osGetTimeJumps = FindAllJumpsTo(mem, osGetTimes);
+            SortedSet<int> osSiRawStartDmaJumps = FindAllJumpsTo(mem, osSiRawStartDmas);
+
+            // Discover all osContInit, we do not need the functions themselves but __osContPifRam passed to __osSiRawStartDma
+            // We know that 'osContInit' calls to 'osGetTime' and '__osSiRawStartDma' 2 times
+            foreach (int regionStart in osGetTimeJumps)
+            {
+                try
+                {
+                    const int MaxRegionLength = 0x80;
+                    var view = osSiRawStartDmaJumps.GetViewBetween(regionStart, regionStart + MaxRegionLength);
+                    if (view.Count != 2)
+                        continue;
+
+                    // Interpret the code around both JALs
+                    List<uint> osContPifRams = new List<uint>();
+                    foreach (int jump in view)
+                    {
+                        osContPifRams.Add(GetSecondArgumentToJAL(mem, (uint)jump));
+                    }
+
+                    if (osContPifRams[0] != osContPifRams[1])
+                        continue;
+
+                    uint vosContPifRam = osContPifRams[0];
+                    if (!IsVAddr(vosContPifRam))
+                        continue;
+
+                    int regionEnd = view.Last();
+                    int regionLength = regionEnd - regionStart;
+                    var interpretedSegment = new ArraySegment<uint>(mem, regionStart, regionLength);
+
+                    interpretedInstructionsOffset = regionStart << 2;
+                    interpretedInstructions = new byte[regionLength << 2];
+                    var interpretedInstructionsIdx = 0;
+                    foreach (uint num in interpretedSegment)
+                    {
+                        Array.Copy(BitConverter.GetBytes(num), 0, interpretedInstructions, interpretedInstructionsIdx, 4);
+                        interpretedInstructionsIdx += 4;
+                    }
+
+                    osContPifRam = (int) vosContPifRam;
+                    return;
+                }
+                catch (Exception) { }
             }
         }
     }
