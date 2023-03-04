@@ -16,7 +16,7 @@ namespace NintendoSpy.Readers
         const uint ramMagicMask = 0xfffff000;
 
         private Process process;
-        public readonly long ramPtrBase;
+        public readonly ulong ramPtrBase;
 
         public readonly int controllerPadsOffset = 0;
         public readonly int interpretedInstructionsOffset = 0;
@@ -66,16 +66,16 @@ namespace NintendoSpy.Readers
             PAGE_WRITECOMBINE = 0x00000400
         }
 
-        public MagicManager(Process process, int[] ramPtrBaseSuggestions, int offset, ref int loadingProgress)
+        public MagicManager(Process process, long[] ramPtrBaseSuggestions, int offset, ref int loadingProgress)
         {
             GC.Collect();
             this.process = process;
 
             bool isRamFound = false;
 
-            foreach (uint ramPtrBaseSuggestion in ramPtrBaseSuggestions)
+            foreach (long ramPtrBaseSuggestion in ramPtrBaseSuggestions)
             {
-                ramPtrBase = ramPtrBaseSuggestion;
+                ramPtrBase = (ulong) ramPtrBaseSuggestion;
                 if (IsRamBaseValid())
                 {
                     isRamFound = true;
@@ -83,32 +83,72 @@ namespace NintendoSpy.Readers
                 }
             }
 
-            long MaxAddress = 0xffffffff;
-            long address = 0;
+
+            ulong parallelStart = 0;
+            ulong parallelEnd = 0;
+            foreach (ProcessModule module in process.Modules)
+            {
+                if (module.ModuleName.Contains("parallel_n64"))
+                {
+                    parallelStart = (ulong)module.BaseAddress;
+                    parallelEnd = parallelStart + (ulong)module.ModuleMemorySize;
+                }
+            }
+
+            ulong MaxAddress = process.Is64Bit() ? 0x800000000000U : 0xffffffffU;
+            ulong address = 0;
             do
             {
                 if (isRamFound)
                     break;
 
-                MEMORY_BASIC_INFORMATION m;
-                int result = VirtualQueryEx(process.Handle, new UIntPtr((uint) address), out m, (uint)Marshal.SizeOf(typeof(MEMORY_BASIC_INFORMATION)));
-                if (address == (long)m.BaseAddress + (long)m.RegionSize || result == 0)
+                int result = VirtualQueryEx(process.Handle, new UIntPtr(address), out MEMORY_BASIC_INFORMATION m, (uint)Marshal.SizeOf(typeof(MEMORY_BASIC_INFORMATION)));
+                if (address == (ulong)m.BaseAddress + (ulong)m.RegionSize || result == 0)
                     break;
 
-                if (m.AllocationProtect != 0)
+                AllocationProtect prot = (AllocationProtect)(m.Protect & 0xff);
+                if (prot == AllocationProtect.PAGE_EXECUTE_READWRITE
+                 || prot == AllocationProtect.PAGE_EXECUTE_WRITECOPY
+                 || prot == AllocationProtect.PAGE_READWRITE
+                 || prot == AllocationProtect.PAGE_WRITECOPY
+                 || prot == AllocationProtect.PAGE_READONLY)
                 {
-                    bool readSuccess = process.ReadValue(new IntPtr(address + offset), out uint value);
+                    uint value;
+                    bool readSuccess = process.ReadValue(new IntPtr((long)(address + (ulong)offset)), out value);
                     if (readSuccess)
                     {
                         if (!isRamFound && ((value & ramMagicMask) == ramMagic))
                         {
-                            ramPtrBase = (uint)(address + offset);
+                            ramPtrBase = address + (ulong)offset;
                             isRamFound = true;
+                        }
+                    }
+
+                    // scan only large regions - we want to find g_rdram
+                    ulong regionSize = (ulong)m.RegionSize;
+                    if (parallelStart <= address && address <= parallelEnd && regionSize >= 0x800000)
+                    {
+                        // g_rdram is aligned to 0x1000
+                        ulong maxCnt = (ulong)m.RegionSize / 0x1000;
+                        for (ulong num = 0; num < maxCnt; num++)
+                        {
+                            readSuccess = process.ReadValue(new IntPtr((long)(address + num * 0x1000)), out value);
+                            if (readSuccess)
+                            {
+                                if (!isRamFound && ((value & ramMagicMask) == ramMagic))
+                                {
+                                    ramPtrBase = address + num * 0x1000;
+                                    isRamFound = true;
+                                }
+                            }
+
+                            if (isRamFound)
+                                break;
                         }
                     }
                 }
 
-                address = (long)m.BaseAddress + (long)m.RegionSize;
+                address = (ulong)m.BaseAddress + (ulong)m.RegionSize;
             }
             while (address <= MaxAddress);
 
@@ -118,7 +158,7 @@ namespace NintendoSpy.Readers
             loadingProgress++;
             uint[] mem;
             {
-                byte[] bytes = process.ReadBytes(new IntPtr(ramPtrBase), 0x400000);
+                byte[] bytes = process.ReadBytes(new IntPtr((long)ramPtrBase), 0x400000);
                 int size = bytes.Count() / 4;
                 mem = new uint[size];
                 for (int idx = 0; idx < size; idx++)
@@ -140,7 +180,7 @@ namespace NintendoSpy.Readers
         bool IsRamBaseValid()
         {
             uint value = 0;
-            bool readSuccess = process.ReadValue(new IntPtr(ramPtrBase), out value);
+            bool readSuccess = process.ReadValue(new IntPtr((long)ramPtrBase), out value);
             return readSuccess && ((value & ramMagicMask) == ramMagic);
         }
 

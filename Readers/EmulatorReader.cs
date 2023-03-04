@@ -87,11 +87,11 @@ namespace NintendoSpy.Readers
             try
             {
                 _loadingProgress = 0;
-                List<int> ramPtrBaseSuggestions = new List<int>();
+                List<long> ramPtrBaseSuggestions = new List<long>();
 
                 var name = _process.ProcessName.ToLower();
-
-                if (name.Contains("project64"))
+                int offset = 0;
+                if (name.Contains("project64") || name.Contains("wine-preloader"))
                 {
                     DeepPointer[] ramPtrBaseSuggestionsDPtrs = { 
                         new DeepPointer("Project64.exe", 0xD6A1C),     //1.6
@@ -99,7 +99,12 @@ namespace NintendoSpy.Readers
                         new DeepPointer("RSP 1.7.dll", 0x44B5C),        //2.3.2; 2.4
                     };
 
-                    // Time to generate some addesses for magic check
+                    DeepPointer[] romPtrBaseSuggestionsDPtrs = { 
+                        new DeepPointer("Project64.exe", 0xD6A2C),     //1.6
+                        new DeepPointer("RSP 1.7.dll", 0x4C050), 
+                        new DeepPointer("RSP 1.7.dll", 0x44B58)        //2.3.2; 2.4
+                    };
+
                     foreach (DeepPointer ramSuggestionPtr in ramPtrBaseSuggestionsDPtrs)
                     {
                         int ptr = -1;
@@ -115,9 +120,21 @@ namespace NintendoSpy.Readers
                     }
                 }
 
-                if (name.Contains("mupen"))
+                if (name.Contains("mupen64"))
                 {
-                    Dictionary<string, int> mupenRAMSuggestions = new Dictionary<string, int>
+                    if (name == "mupen64")
+                    {
+                        // Current mupen releases
+                        {
+                            ramPtrBaseSuggestions.Add(0x00505CB0); // 1.0.9
+                            ramPtrBaseSuggestions.Add(0x00505D80); // 1.0.9.1
+                            ramPtrBaseSuggestions.Add(0x0050B110); // 1.0.10
+                        }
+                    }
+                    else
+                    {
+                        // Legacy mupen versions
+                        Dictionary<string, int> mupenRAMSuggestions = new Dictionary<string, int>
                     {
                         { "mupen64-rerecording", 0x008EBA80 },
                         { "mupen64-pucrash", 0x00912300 },
@@ -127,28 +144,23 @@ namespace NintendoSpy.Readers
                         { "mupen64-rrv8-avisplit", 0x008ECBB0 },
                         { "mupen64-rerecording-v2-reset", 0x008ECA90 },
                     };
+                        ramPtrBaseSuggestions.Add(mupenRAMSuggestions[name]);
+                    }
 
-                    ramPtrBaseSuggestions.Add(mupenRAMSuggestions[name]);
+                    offset = 0x20;
                 }
 
-                Dictionary<string, int> offsets = new Dictionary<string, int>
+                if (name.Contains("retroarch"))
                 {
-                    { "Project64", 0 },
-                    { "Project64d", 0 },
-                    { "mupen64-rerecording", 0x20 },
-                    { "mupen64-pucrash", 0x20 },
-                    { "mupen64_lua", 0x20 },
-                    { "mupen64-wiivc", 0x20 },
-                    { "mupen64-RTZ", 0x20 },
-                    { "mupen64-rrv8-avisplit", 0x20 },
-                    { "mupen64-rerecording-v2-reset", 0x20 },
-                };
+                    ramPtrBaseSuggestions.Add(0x80000000);
+                    offset = 0x40;
+                }
 
                 _loadingProgress++;
-                MagicManager mm = new MagicManager(_process, ramPtrBaseSuggestions.ToArray(), offsets[_process.ProcessName], ref _loadingProgress);
-                _controllerPadsPtr = new IntPtr(mm.ramPtrBase + mm.controllerPadsOffset);
+                MagicManager mm = new MagicManager(_process, ramPtrBaseSuggestions.ToArray(), offset, ref _loadingProgress);
+                _controllerPadsPtr = new IntPtr((long) mm.ramPtrBase + mm.controllerPadsOffset);
                 _interpretedInstructionsOffset = mm.interpretedInstructionsOffset;
-                _interpretedInstructionsPtr = new IntPtr(mm.ramPtrBase + _interpretedInstructionsOffset);
+                _interpretedInstructionsPtr = new IntPtr((long) mm.ramPtrBase + _interpretedInstructionsOffset);
                 _interpretedInstructions = mm.interpretedInstructions;
 
                 _state = State.RUNNING;
