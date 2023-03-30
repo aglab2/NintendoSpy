@@ -137,17 +137,17 @@ namespace MIPSInterpreter
 
         static int CountJumps(uint[] mem, int regionStart, int regionEnd)
         {
-            int jmpCount = 0;
+            HashSet<uint> jumps = new HashSet<uint>();
             for (int i = regionStart; i <= regionEnd; i++)
             {
                 var inst = Decompiler.Decode(mem[i]);
                 if (inst.cmd == Cmd.JAL)
                 {
-                    jmpCount++;
+                    jumps.Add(inst.jump.Value);
                 }
             }
 
-            return jmpCount;
+            return jumps.Count();
         }
 
         static uint GetSecondArgumentToJAL(uint[] mem, uint off)
