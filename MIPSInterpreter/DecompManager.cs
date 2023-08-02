@@ -70,9 +70,19 @@ namespace MIPSInterpreter
             0x40086000, 0x2401FFFE, 0x01014824, 0x40896000, 0x31020001, 0x8D480000, 0x3108FF00, 0x110B000E
         };
 
+        static readonly uint[] OsDisableInt3 = new uint[]
+        {
+            0x31EFFF00, 0x400C6000, 0x2401FFFE, 0x01816824, 0x408D6000, 0x31820001, 0x8DCC0000
+        };
+
         static readonly uint[] OsRestoreInt = new uint[]
         {
             0x40086000, 0x01044025, 0x40886000, 0x00000000, 0x00000000, 0x03E00008, 0x00000000
+        };
+
+        static readonly uint[] OsRestoreInt2 = new uint[]
+        {
+            0x400C6000, 0x01846025, 0x408C6000, 0x00000000, 0x00000000, 0x03E00008, 0x00000000
         };
 
         static readonly uint[] OsWritebackDCache = new uint[]
@@ -83,6 +93,14 @@ namespace MIPSInterpreter
             0x0109082B, 0x1420FFFD, 0x25080010, 0x03E00008, 0x00000000
         };
 
+        static readonly uint[] OsWritebackDCache2 = new uint[]
+        {
+            0x18A00011, 0x00000000, 0x240F2000, 0x00AF082B, 0x1020000F, 0x00000000, 0x00806025, 0x00856821,
+            0x018D082B, 0x10200008, 0x00000000, 0x25ADFFF0, 0x318E000F, 0x018E6023, 0xBD990000, 0x018D082B,
+            0x1420FFFD, 0x258C0010, 0x03E00008, 0x00000000, 0x3C0C8000, 0x018F6821, 0x25ADFFF0, 0xBD810000,
+            0x018D082B, 0x1420FFFD, 0x258C0010, 0x03E00008, 0x00000000
+        };
+
         static readonly uint[] OsInvalDCache = new uint[]
         {
             0x18A0001F, 0x00000000, 0x240B2000, 0x00AB082B, 0x1020001D, 0x00000000, 0x00804025, 0x00854821,
@@ -91,6 +109,20 @@ namespace MIPSInterpreter
             0xBD350010, 0x0128082B, 0x14200005, 0x00000000, 0xBD110000, 0x0109082B, 0x1420FFFD, 0x25080010,
             0x03E00008, 0x00000000, 0x3C088000, 0x010B4821, 0x2529FFF0, 0xBD010000, 0x0109082B, 0x1420FFFD,
             0x25080010, 0x03E00008, 0x00000000
+        };
+
+        static readonly uint[] OsInvalDCache2 = new uint[]
+        {
+            0x18A00020, 0x00000000, 0x240F2000, 0x00AF082B, 0x1020001E, 0x00000000, 0x00806025, 0x00856821,
+            0x018D082B, 0x10200017, 0x00000000, 0x25ADFFF0, 0x318E000F, 0x11C00007, 0x00000000, 0x018E6023,
+            0xBD950000, 0x018D082B, 0x1020000E, 0x00000000, 0x258C0010, 0x31AE000F, 0x11C00006, 0x00000000,
+            0x01AE6823, 0xBDB50010, 0x01AC082B, 0x14200005, 0x00000000, 0xBD910000, 0x018D082B, 0x1420FFFD,
+            0x258C0010, 0x03E00008, 0x00000000, 0x3C0C8000, 0x018F6821, 0x25ADFFF0, 0xBD810000, 0x018D082B,
+            0x1420FFFD, 0x258C0010, 0x03E00008, 0x00000000, 0x18A00011, 0x00000000, 0x240F4000, 0x00AF082B,
+            0x1020000F, 0x00000000, 0x00806025, 0x00856821, 0x018D082B, 0x10200008, 0x00000000, 0x25ADFFE0,
+            0x318E001F, 0x018E6023, 0xBD900000, 0x018D082B, 0x1420FFFD, 0x258C0020, 0x03E00008, 0x00000000,
+            0x3C0C8000, 0x018F6821, 0x25ADFFE0, 0xBD800000, 0x018D082B, 0x1420FFFD, 0x258C0020, 0x03E00008,
+            0x00000000
         };
 
         static bool IsVAddr(uint addr)
@@ -196,8 +228,18 @@ namespace MIPSInterpreter
             {
                 disableOff.Add(off - 4);
             }
+            foreach (int off in IndicesOf(mem, OsDisableInt3))
+            {
+                disableOff.Add(off - 3);
+            }
             SortedSet<int> osDisableIntJumps = FindAllJumpsTo(mem, disableOff);
-            SortedSet<int> osRestoreIntJumps = FindAllJumpsTo(mem, OsRestoreInt);
+
+            var restoreOff = IndicesOf(mem, OsRestoreInt);
+            foreach (int off in IndicesOf(mem, OsRestoreInt2))
+            {
+                restoreOff.Add(off);
+            }
+            SortedSet<int> osRestoreIntJumps = FindAllJumpsTo(mem, restoreOff);
             // Discover all osGetTime function that look like calls to 3 functions
             // OSTime osGetTime()
             // {
@@ -229,8 +271,19 @@ namespace MIPSInterpreter
                 catch (Exception) { }
             }
 
-            SortedSet<int> osWritebackDCacheJumps = FindAllJumpsTo(mem, OsWritebackDCache);
-            SortedSet<int> osInvalDCacheJumps = FindAllJumpsTo(mem, OsInvalDCache);
+            var writebackOff = IndicesOf(mem, OsWritebackDCache);
+            foreach (int off in IndicesOf(mem, OsWritebackDCache2))
+            {
+                writebackOff.Add(off);
+            }
+            SortedSet<int> osWritebackDCacheJumps = FindAllJumpsTo(mem, writebackOff);
+
+            var invalOff = IndicesOf(mem, OsInvalDCache);
+            foreach (int off in IndicesOf(mem, OsInvalDCache2))
+            {
+                invalOff.Add(off);
+            }
+            SortedSet<int> osInvalDCacheJumps = FindAllJumpsTo(mem, invalOff);
 
             // Discover all __osSiRawStartDma that looks like call to 3 functions with 4th being after prolog
             //  s32 __osSiRawStartDma(s32 direction, void* dramAddr)
@@ -256,7 +309,9 @@ namespace MIPSInterpreter
                     if (3 != CountJumps(mem, regionStart, regionEnd))
                         continue;
 
-                    osSiRawStartDmas.Add(FindProlog(mem, regionStart, 0x20));
+                    int prologAt = FindProlog(mem, regionStart, 0x20);
+                    for (int i = 0; i < 5; i++)
+                        osSiRawStartDmas.Add(prologAt - i);
                 }
                 catch (Exception) { }
             }

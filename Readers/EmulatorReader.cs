@@ -20,7 +20,7 @@ namespace NintendoSpy.Readers
         public event StateEventHandler ControllerStateChanged;
         public event EventHandler ControllerDisconnected;
 
-        const double TIMER_MS = 30;
+        const double TIMER_MS = 13;
         State state;
         State _state
         { 
@@ -251,7 +251,7 @@ namespace NintendoSpy.Readers
             sbyte x = 0;
             sbyte y = 0;
             bool cok = false;
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < 100; i++)
             {
                 try
                 {

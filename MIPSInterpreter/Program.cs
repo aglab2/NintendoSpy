@@ -13,7 +13,7 @@ namespace MIPSInterpreter
         {
             uint[] mem;
             {
-                byte[] bytes = File.ReadAllBytes("D:\\git\\SM64StarDisplay\\ram_dump\\ss3.bin");
+                byte[] bytes = File.ReadAllBytes("C:\\dump.bin");
                 int size = bytes.Count() / 4;
                 mem = new uint[size];
                 for (int idx = 0; idx < size; idx++)
