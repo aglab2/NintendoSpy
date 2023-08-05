@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.SqlServer.Server;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -25,7 +26,7 @@ namespace MIPSInterpreter
     {
         public int? interpretedInstructionsOffset;
         public byte[] interpretedInstructions = null;
-        public int? osContPifRam = null;
+        public int? gControllerPads = null;
 
         // Magic regarding RAM dynamic decompiling
         static unsafe List<int> IndicesOf(uint[] arrayToSearchThrough, MaskPair[] patternToFind)
@@ -185,6 +186,13 @@ namespace MIPSInterpreter
             new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
         };
 
+        static readonly MaskPair[] GPRSetup = new MaskPair[]
+        {
+            new MaskPair(0x3c1c0000, 0x0000ffff), // LUI GP, 0x____
+            new MaskPair(0x03E00008, 0x00000000), // JR RA
+            new MaskPair(0x279c0000, 0x0000ffff), // ADDIU GP, GP, ____
+        };
+
         static bool IsVAddr(uint addr)
         {
             if (0x80000000 != (0xff000000 & addr))
@@ -266,6 +274,37 @@ namespace MIPSInterpreter
             }
 
             return (uint) interpreter.gpr[(int)Register.A1];
+        }
+
+        static (uint, SortedSet<uint>) GetThirdArgumentToJALAndCheckWordStore(uint gp, uint[] mem, uint off)
+        {
+            uint vaddr = 0x80000000 | (off << 2);
+            Interpreter interpreter = new Interpreter(mem);
+            const uint InstructionsToInterpretCount = 20;
+            const uint BytesToInterpretCount = InstructionsToInterpretCount << 2;
+            interpreter.pc = vaddr - BytesToInterpretCount;
+            interpreter.gpr[(int)Register.GP] = (int) gp;
+
+            Instruction? inst;
+
+            SortedSet<uint> wordsStored = new SortedSet<uint>();
+            for (int i = 0; i < InstructionsToInterpretCount + 2 /*JAL + delay slot*/; i++)
+            {
+                inst = interpreter.GetInstruction();
+                if (inst.HasValue)
+                {
+                    interpreter.Execute(inst.Value);
+                    if (inst.Value.cmd == Cmd.SW)
+                    {
+                        uint wordStored = (uint)interpreter.gpr[(int)inst.Value.rt.Value];
+                        if (0 != wordStored)
+                            wordsStored.Add(wordStored);
+                    }
+                }
+            }
+
+            uint a2 = (uint)interpreter.gpr[(int)Register.A2];
+            return (a2, wordsStored);
         }
 
         static bool IsPrologInstruction(Instruction inst)
@@ -384,6 +423,7 @@ namespace MIPSInterpreter
 
             // Discover all osContInit, we do not need the functions themselves but __osContPifRam passed to __osSiRawStartDma
             // We know that 'osContInit' calls to 'osGetTime' and '__osSiRawStartDma' 2 times
+            List<int> osContInts = new List<int>();
             foreach (int regionStart in osGetTimeJumps)
             {
                 try
@@ -407,8 +447,55 @@ namespace MIPSInterpreter
                     if (!IsVAddr(vosContPifRam))
                         continue;
 
-                    int regionEnd = view.Last();
-                    int regionLength = regionEnd - regionStart;
+                    int prologAt = FindProlog(mem, regionStart, 0x20);
+                    for (int i = 0; i < 5; i++)
+                        osContInts.Add(prologAt - i);
+                }
+                catch (Exception) { }
+            }
+
+            var gprSetups = IndicesOf(mem, GPRSetup);
+            uint gp = 0;
+            if (gprSetups.Count != 0)
+            {
+                uint gprOff = (uint) gprSetups[0];
+                uint gpHi = mem[gprOff] & 0xffff;
+                short gpLo = (short) (mem[gprOff + 2] & 0xffff);
+                gp = (gpHi << 16) + (uint) gpLo;
+            }
+
+            SortedSet<int> osContIntJumps = FindAllJumpsTo(mem, osContInts);
+            foreach (int osContIntJump in osContIntJumps) 
+            {
+                try
+                {
+                    (var status, var wordStores) = GetThirdArgumentToJALAndCheckWordStore(gp, mem, (uint) osContIntJump);
+                    if (wordStores.Count < 2)
+                        continue;
+
+                    if (!wordStores.Contains(status))
+                        continue;
+                    
+                    wordStores.Remove(status);
+                    uint cont = 0;
+                    foreach (var stored in wordStores)
+                    {
+                        if (cont != 0)
+                        {
+                            long dist0 = Math.Abs(status - stored);
+                            long dist1 = Math.Abs(status - cont);
+                            if (dist0 < dist1)
+                                cont = stored;
+                        }
+                        else
+                        {
+                            cont = stored;
+                        }
+                    }
+
+                    int regionEnd = osContIntJump;
+                    int regionLength = 20;
+                    int regionStart = regionEnd - regionLength;
                     var interpretedSegment = new ArraySegment<uint>(mem, regionStart, regionLength);
 
                     interpretedInstructionsOffset = regionStart << 2;
@@ -420,11 +507,14 @@ namespace MIPSInterpreter
                         interpretedInstructionsIdx += 4;
                     }
 
-                    osContPifRam = (int) vosContPifRam;
+                    gControllerPads = (int)cont;
                     return;
                 }
-                catch (Exception) { }
+                catch { }
             }
         }
     }
 }
+
+/*
+ */

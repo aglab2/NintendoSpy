@@ -18,7 +18,7 @@ namespace NintendoSpy.Readers
         private Process process;
         public readonly ulong ramPtrBase;
 
-        public readonly int osContPifRam = 0;
+        public readonly int controllerPadsOffset = 0;
         public readonly int interpretedInstructionsOffset = 0;
         public readonly byte[] interpretedInstructions = null;
 
@@ -168,11 +168,11 @@ namespace NintendoSpy.Readers
             }
 
             DecompManager dm = new DecompManager(mem);
-            if (!dm.osContPifRam.HasValue)
+            if (!dm.gControllerPads.HasValue)
                 throw new ArgumentException("Failed to gControllerPads!");
 
             loadingProgress++;
-            osContPifRam = dm.osContPifRam.Value & 0xffffff;
+            controllerPadsOffset = dm.gControllerPads.Value & 0xffffff;
             interpretedInstructionsOffset = dm.interpretedInstructionsOffset.Value;
             interpretedInstructions = dm.interpretedInstructions;
         }
@@ -186,7 +186,7 @@ namespace NintendoSpy.Readers
 
         public bool isValid()
         {
-            return IsRamBaseValid() && osContPifRam != 0;
+            return IsRamBaseValid() && controllerPadsOffset != 0;
         }
     }
 }

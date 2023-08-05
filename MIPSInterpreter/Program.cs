@@ -28,7 +28,7 @@ namespace MIPSInterpreter
             }
 
             DecompManager dm = new DecompManager(mem);
-            Console.WriteLine($"{path} osContPifRam={dm.osContPifRam:X}");
+            Console.WriteLine($"{path} gControllerPads={dm.gControllerPads:X}");
         }
 
         struct CleanseResult
@@ -152,6 +152,7 @@ namespace MIPSInterpreter
 
         static void Main(string[] args)
         {
+            /*
             var safeRegs = new HashSet<Register> { Register.A0, Register.A1, Register.A2, Register.A3, Register.V0, Register.V1, Register.K0, Register.K1, Register.SP, Register.FP, Register.GP, Register.RA };
             Console.WriteLine("OsWritebackDCache");
             foreach (var result in Cleanse(safeRegs, OsWritebackDCache))
@@ -163,7 +164,8 @@ namespace MIPSInterpreter
             {
                 Console.WriteLine($"new MaskPair({result.pair}), // {result.inst,-32} {result.cleanedInst,-32}");
             }
-
+            */
+            Analyze("D:\\dumps\\ages.bin");
             foreach (var dir in Directory.EnumerateFiles("D:\\dumps"))
             {
                 Analyze(dir);

@@ -391,7 +391,8 @@ namespace MIPSInterpreter
             {
                 inst = Decompiler.Decode(cmd);
             }
-            catch(Exception) { }
+            catch(Exception) 
+            { }
             pc += 4;
             return inst;
         }

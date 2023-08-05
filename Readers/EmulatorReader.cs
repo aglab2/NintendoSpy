@@ -32,7 +32,7 @@ namespace NintendoSpy.Readers
         DateTime _lastRunningTime = DateTime.Now;
         DispatcherTimer _timer;
         Process _process;
-        IntPtr _osContPifRamPtr;
+        IntPtr _controllerPadsPtr;
         int _interpretedInstructionsOffset;
         IntPtr _interpretedInstructionsPtr;
         byte[] _interpretedInstructions;
@@ -159,7 +159,7 @@ namespace NintendoSpy.Readers
 
                 _loadingProgress++;
                 MagicManager mm = new MagicManager(_process, ramPtrBaseSuggestions.ToArray(), offset, ref _loadingProgress);
-                _osContPifRamPtr = new IntPtr((long) mm.ramPtrBase + mm.osContPifRam);
+                _controllerPadsPtr = new IntPtr((long) mm.ramPtrBase + mm.controllerPadsOffset);
                 _interpretedInstructionsOffset = mm.interpretedInstructionsOffset;
                 _interpretedInstructionsPtr = new IntPtr((long) mm.ramPtrBase + _interpretedInstructionsOffset);
                 _interpretedInstructions = mm.interpretedInstructions;
@@ -247,38 +247,21 @@ namespace NintendoSpy.Readers
                 return;
             }
 
-            ushort flags = 0;
-            sbyte x = 0;
-            sbyte y = 0;
-            bool cok = false;
-            for (int i = 0; i < 100; i++)
+            ushort flags;
+            sbyte x;
+            sbyte y;
+            try
             {
-                try
-                {
-                    var pifRam = _process.ReadValue<ulong>(_osContPifRamPtr);
-                    byte cmd = (byte)pifRam;
-                    byte rxsize = (byte)(pifRam >> 8);
-                    byte txsize = (byte)(pifRam >> 16);
-                    byte dummy = (byte)(pifRam >> 24);
-                    if (cmd == 1) // CONT_CMD_READ_BUTTON
-                    {
-                        flags = (ushort)(pifRam >> 48);
-                        x = (sbyte)(pifRam >> 40);
-                        y = (sbyte)(pifRam >> 32);
-                        cok = true;
-                        break;
-                    }
-                    else
-                    {
-                        Thread.Sleep(0);
-                    }
-                }
-                catch (Exception)
-                { }
+                var value = _process.ReadValue<uint>(_controllerPadsPtr);
+                flags = (ushort)(value >> 16);
+                x = (sbyte)(value >> 8);
+                y = (sbyte)value;
             }
-
-            if (!cok)
+            catch (Exception)
+            {
+                // this is kind of a weird situation but let's consider this failure temporary...
                 return;
+            }
 
             var outState = new ControllerStateBuilder();
 
