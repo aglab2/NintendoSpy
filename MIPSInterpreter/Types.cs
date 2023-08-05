@@ -17,7 +17,10 @@ namespace MIPSInterpreter
     enum Op
     {
         SPECIAL = 0b000000,
-        REGIMM = 0x000001,
+        REGIMM = 0b000001,
+
+        COP0 = 0b010000,
+        COP1 = 0b010000,
 
         ADDI = 0b001000,
         ADDIU = 0b001001,
@@ -30,6 +33,7 @@ namespace MIPSInterpreter
         BLEZL = 0b010110,
         BNE = 0b000101,
         BNEL = 0b010101,
+        CACHE = 0b101111,
         DADDI = 0b011000,
         DADDIU = 0b011001,
         J = 0b000010,
@@ -126,12 +130,30 @@ namespace MIPSInterpreter
         BLTZL = 0b00010,
     };
 
+    enum Cop
+    {
+        MF = 0b00000,
+        MT = 0b00100,
+    };
+
     [Flags]
     enum Cmd
     {
-        REG = 0b10000000,
+        // Some hacks required for cleaner ToString conversions...
+        SLL = 0b10000000,
+        REG = SLL,
+
         IMM = 0b01000000,
-        REGIMM = IMM | REG,
+
+        BLTZ = IMM | REG,
+        REGIMM = BLTZ,
+
+        MFC0 = 0b0100000000,
+        COP0 = MFC0,
+        MFC1 = 0b1000000000,
+        COP1 = MFC1,
+
+        NOP = 0,
 
         ADDI = IMM | Op.ADDI,
         ADDIU = IMM | Op.ADDIU,
@@ -146,6 +168,7 @@ namespace MIPSInterpreter
         BNEL = IMM | Op.BNEL,
         DADDI = IMM | Op.DADDI,
         DADDIU = IMM | Op.DADDIU,
+        CACHE = IMM | Op.CACHE,
         J = IMM | Op.J,
         JAL = IMM | Op.JAL,
         LB = IMM | Op.LB,
@@ -210,7 +233,6 @@ namespace MIPSInterpreter
         MULTU = REG | Funct.MULTU,
         NOR = REG | Funct.NOR,
         OR = REG | Funct.OR,
-        SLL = REG | Funct.SLL,
         SLLV = REG | Funct.SLLV,
         SLT = REG | Funct.SLT,
         SLTU = REG | Funct.SLTU,
@@ -228,10 +250,12 @@ namespace MIPSInterpreter
         BGEZAL = REGIMM | FunctImm.BGEZAL,
         BGEZALL = REGIMM | FunctImm.BGEZALL,
         BGEZL = REGIMM | FunctImm.BGEZL,
-        BLTZ = REGIMM | FunctImm.BLTZ,
         BLTZAL = REGIMM | FunctImm.BLTZAL,
         BLTZALL = REGIMM | FunctImm.BLTZALL,
         BLTZL = REGIMM | FunctImm.BLTZL,
+
+        MTC0 = COP0 | Cop.MT,
+        MTC1 = COP1 | Cop.MT,
     }
 
     enum Register
@@ -268,6 +292,58 @@ namespace MIPSInterpreter
         SP,
         FP,
         RA,
+
+        // A convenience register used for mask printing purposes
+        __,
+    };
+
+    enum Cop0Registers
+    {
+        Context0,
+        Random,
+        EntryLo0,
+        EntryLo1,
+        Context4,
+        PageMask,
+        Wired,
+        HWREna,
+        BadVAddr,
+        Count,
+        EntryHi,
+        Compare,
+        Status,
+        Cause,
+        EPC,
+        PRId,
+        Config,
+        LLAddr,
+        WatchLo,
+        WatchHi,
+
+        Debug = 23,
+        DEPC,
+        Perf,
+        ECC,
+        CacheErr,
+        TagLo,
+        TagHi,
+        ErrorEPC,
+        DESAVE,
+    };
+
+    [Flags]
+    enum CacheOp
+    {
+        D = 0b01,
+        S = 0b10,
+
+        IIndexInvalidate = 0b00000,
+        IIndexLoadTag = 0b00100,
+        IIndexStoreTag = 0b01000,
+        IHitInvalidate = 0b10000,
+        CacheBarrier = 0b10100,
+        IIndexLoadData = 0b11000,
+        IIndexStoreData = 0b11100,
     };
 
     [Flags]
@@ -282,6 +358,9 @@ namespace MIPSInterpreter
         REG_D = 0b00000100,
         REG_A = 0b00001000,
 
+        COP0_D = 0b100000000,
+        CACHE_T = 0b1000000000,
+
         REG_ST = REG_S | REG_T,
         REG_SD = REG_S | REG_D,
         REG_STD = REG_S | REG_T | REG_D,
@@ -290,5 +369,9 @@ namespace MIPSInterpreter
         REGIMM_T = IMM | REG_T,
         REGOFF_S = OFF | REG_S,
         REGOFF_ST = OFF | REG_S | REG_T,
+        REG_COP0 = REG_T | COP0_D,
+        REGOFF_CACHE = REG_S | CACHE_T | OFF,
+
+        NONE = 0,
     };
 }

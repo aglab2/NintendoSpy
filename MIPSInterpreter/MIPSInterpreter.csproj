@@ -45,6 +45,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Cleanser.cs" />
     <Compile Include="Converter.cs" />
     <Compile Include="Decompiler.cs" />
     <Compile Include="DecompManager.cs" />

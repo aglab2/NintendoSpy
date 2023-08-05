@@ -11,6 +11,11 @@ namespace MIPSInterpreter
         public static Instruction Decode(uint inst)
         {
             Instruction ret = new Instruction();
+            if (inst == 0) 
+            {
+                ret.cmd = Cmd.NOP;
+                return ret;
+            }
 
             var op = (Op)Converter.Extract(inst, 26, 6);
             if (op == Op.SPECIAL)
@@ -22,6 +27,20 @@ namespace MIPSInterpreter
             {
                 var functImm = (FunctImm)Converter.Extract(inst, 16, 5);
                 ret.cmd = Converter.ToCmd(functImm);
+            }
+            else if (op == Op.COP0)
+            {
+                var cop = (Cop)Converter.Extract(inst, 21, 5);
+                if (cop != Cop.MF && cop != Cop.MT)
+                {
+                    throw new ArgumentException("Unknown COP instruction");
+                }
+
+                ret.cmd = Converter.ToCmd(cop, 0);
+            }
+            else if (op == Op.COP1)
+            {
+                throw new ArgumentException("CoProcessor 1 is not supported");
             }
             else
             {
@@ -57,6 +76,14 @@ namespace MIPSInterpreter
             if (format.HasFlag(Format.REG_A))
             {
                 ret.shift = (ushort) Converter.Extract(inst, 6, 5);
+            }
+            if (format.HasFlag(Format.COP0_D))
+            {
+                ret.cop0 = (Cop0Registers)Converter.Extract(inst, 11, 5);
+            }
+            if (format.HasFlag(Format.CACHE_T))
+            {
+                ret.cache = (CacheOp)Converter.Extract(inst, 16, 5);
             }
             return ret;
         }

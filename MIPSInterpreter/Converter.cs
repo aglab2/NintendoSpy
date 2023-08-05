@@ -23,6 +23,11 @@ namespace MIPSInterpreter
             return Cmd.REGIMM | (Cmd)functImm;
         }
 
+        public static Cmd ToCmd(Cop cop, int num)
+        {
+            return (num == 0 ? Cmd.COP0 : Cmd.COP1) | (Cmd)cop;
+        }
+
         public static Op ToOp(Cmd cmd)
         {
             return (Op)((int)cmd & 0xffffff);
@@ -40,6 +45,8 @@ namespace MIPSInterpreter
 
         static Dictionary<Cmd, Format> CmdToFormat = new Dictionary<Cmd, Format>()
         {
+            { Cmd.NOP, Format.NONE },
+
             { Cmd.ADDI, Format.REGIMM_ST },
             { Cmd.ADDIU, Format.REGIMM_ST },
             { Cmd.ANDI, Format.REGIMM_ST },
@@ -139,6 +146,11 @@ namespace MIPSInterpreter
             { Cmd.BLTZAL, Format.REGOFF_S },
             { Cmd.BLTZALL, Format.REGOFF_S },
             { Cmd.BLTZL, Format.REGOFF_S },
+
+            { Cmd.MTC0, Format.REG_COP0 },
+            { Cmd.MFC0, Format.REG_COP0 },
+
+            { Cmd.CACHE, Format.REGOFF_CACHE },
         };
 
         public static Format ToFormat(Cmd cmd)
@@ -148,6 +160,9 @@ namespace MIPSInterpreter
 
         public static uint ToUInt(Instruction inst)
         {
+            if (inst.cmd == Cmd.NOP)
+                return 0;
+
             Format format = ToFormat(inst.cmd);
 
             uint ret = 0;
@@ -174,11 +189,19 @@ namespace MIPSInterpreter
             }
             if (format.HasFlag(Format.REG_D))
             {
-                ret |= (uint)inst.rt.Value << 11;
+                ret |= (uint)inst.rd.Value << 11;
             }
             if (format.HasFlag(Format.REG_A))
             {
                 ret |= (uint)inst.shift.Value << 6;
+            }
+            if (format.HasFlag(Format.COP0_D))
+            {
+                ret |= (uint)inst.cop0.Value << 11;
+            }
+            if (format.HasFlag(Format.CACHE_T))
+            {
+                ret |= (uint)inst.cache.Value << 16;
             }
 
             Cmd cmd = inst.cmd;
@@ -196,6 +219,12 @@ namespace MIPSInterpreter
             else if (cmd.HasFlag(Cmd.IMM))
             {
                 ret |= cmdVal << 26;
+            }
+            else if (cmd.HasFlag(Cmd.COP0))
+            {
+                uint cop0 = 0b010000;
+                ret |= cop0   << 26;
+                ret |= cmdVal << 21;
             }
             else
             {

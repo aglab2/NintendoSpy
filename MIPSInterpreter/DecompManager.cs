@@ -4,6 +4,23 @@ using System.Linq;
 
 namespace MIPSInterpreter
 {
+    struct MaskPair
+    {
+        public uint val;
+        public uint mask;
+
+        public MaskPair(uint val, uint mask)
+        {
+            this.val = val;
+            this.mask = mask;
+        }
+
+        public override string ToString()
+        {
+            return $"0x{val:X8}, 0x{mask:X8}";
+        }
+    }
+
     public class DecompManager
     {
         public int? interpretedInstructionsOffset;
@@ -11,6 +28,41 @@ namespace MIPSInterpreter
         public int? osContPifRam = null;
 
         // Magic regarding RAM dynamic decompiling
+        static unsafe List<int> IndicesOf(uint[] arrayToSearchThrough, MaskPair[] patternToFind)
+        {
+            List<int> ret = new List<int>();
+            if (patternToFind.Length > arrayToSearchThrough.Length)
+                return ret;
+
+            fixed (MaskPair* patternToFindPtr = patternToFind)
+            fixed (uint* arrayToSearchThroughPtr = arrayToSearchThrough)
+            {
+                for (int i = 0; i <= arrayToSearchThrough.Length - patternToFind.Length; i++)
+                {
+                    bool found = true;
+                    for (int j = 0; j < patternToFind.Length; j++)
+                    {
+                        var data = arrayToSearchThroughPtr[i + j];
+                        var expectedAfterMasking = patternToFindPtr[j].val;
+                        var mask = patternToFindPtr[j].mask;
+                        var maskedData = data & (~mask);
+                        var leftoverData = data & mask;
+                        if (maskedData != expectedAfterMasking || (0 != mask && 0 == leftoverData))
+                        {
+                            found = false;
+                            break;
+                        }
+                    }
+                    if (found)
+                    {
+                        ret.Add(i);
+                    }
+                }
+            }
+
+            return ret;
+        }
+
         static unsafe List<int> IndicesOf(uint[] arrayToSearchThrough, uint[] patternToFind)
         {
             List<int> ret = new List<int>();
@@ -60,69 +112,77 @@ namespace MIPSInterpreter
             0x40024800, 0x03E00008, 0x00000000
         };
 
-        static readonly uint[] OsDisableInt = new uint[]
+        static readonly MaskPair[] OsDisableInt = new MaskPair[]
         {
-            0x40086000, 0x2401FFFE, 0x01014824, 0x40896000, 0x31020001, 0x00000000, 0x03E00008, 0x00000000
+            new MaskPair(0x40006000, 0x001F0000), // MFC0     T0, Status              MFC0     __, Status
+            new MaskPair(0x2400FFFE, 0x001F0000), // ADDIU    AT, R0, 0xFFFE          ADDIU    __, R0, 0xFFFE
+            new MaskPair(0x00000024, 0x03FFF800), // AND      T1, T0, AT              AND      __, __, __
+            new MaskPair(0x40806000, 0x001F0000), // MTC0     T1, Status              MTC0     __, Status
+            new MaskPair(0x30020001, 0x03E00000), // ANDI     V0, T0, 0x0001          ANDI     V0, __, 0x0001
         };
 
-        static readonly uint[] OsDisableInt2 = new uint[]
+        static readonly MaskPair[] OsRestoreInt = new MaskPair[]
         {
-            0x40086000, 0x2401FFFE, 0x01014824, 0x40896000, 0x31020001, 0x8D480000, 0x3108FF00, 0x110B000E
+            new MaskPair(0x40006000, 0x001F0000), // MFC0     T0, Status              MFC0     __, Status
+            new MaskPair(0x00040025, 0x03E0F800), // OR       T0, T0, A0              OR       __, __, A0
+            new MaskPair(0x40806000, 0x001F0000), // MTC0     T0, Status              MTC0     __, Status
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
+            new MaskPair(0x03E00008, 0x00000000), // JR       RA                      JR       RA
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
         };
 
-        static readonly uint[] OsDisableInt3 = new uint[]
+        static readonly MaskPair[] OsWritebackDCache = new MaskPair[]
         {
-            0x31EFFF00, 0x400C6000, 0x2401FFFE, 0x01816824, 0x408D6000, 0x31820001, 0x8DCC0000
+            new MaskPair(0x00000023, 0x03FFF800), // SUBU     T0, T0, T2              SUBU     __, __, __
+            new MaskPair(0xBC190000, 0x03E00000), // CACHE    (D, IIndexLoadData), T0, 0x0000 CACHE    (D, IIndexLoadData), __, 0x0000
+            new MaskPair(0x0000002B, 0x03FFF800), // SLTU     AT, T0, T1              SLTU     __, __, __
+            new MaskPair(0x1400FFFD, 0x03E00000), // BNE      R0, 0xFFFFFFF4(AT)      BNE      R0, 0xFFFFFFF4(__)
+            new MaskPair(0x24000010, 0x03FF0000), // ADDIU    T0, T0, 0x0010          ADDIU    __, __, 0x0010
+            new MaskPair(0x03E00008, 0x00000000), // JR       RA                      JR       RA
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
+            new MaskPair(0x3C008000, 0x001F0000), // LUI      T0, 0x8000              LUI      __, 0x8000
+            new MaskPair(0x00000021, 0x03FFF800), // ADDU     T1, T0, T3              ADDU     __, __, __
+            new MaskPair(0x2400FFF0, 0x03FF0000), // ADDIU    T1, T1, 0xFFF0          ADDIU    __, __, 0xFFF0
+            new MaskPair(0xBC010000, 0x03E00000), // CACHE    (D), T0, 0x0000         CACHE    (D), __, 0x0000
+            new MaskPair(0x0000002B, 0x03FFF800), // SLTU     AT, T0, T1              SLTU     __, __, __
+            new MaskPair(0x1400FFFD, 0x03E00000), // BNE      R0, 0xFFFFFFF4(AT)      BNE      R0, 0xFFFFFFF4(__)
+            new MaskPair(0x24000010, 0x03FF0000), // ADDIU    T0, T0, 0x0010          ADDIU    __, __, 0x0010
+            new MaskPair(0x03E00008, 0x00000000), // JR       RA                      JR       RA
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
         };
 
-        static readonly uint[] OsRestoreInt = new uint[]
+        static readonly MaskPair[] OsInvalDCache = new MaskPair[]
         {
-            0x40086000, 0x01044025, 0x40886000, 0x00000000, 0x00000000, 0x03E00008, 0x00000000
-        };
-
-        static readonly uint[] OsRestoreInt2 = new uint[]
-        {
-            0x400C6000, 0x01846025, 0x408C6000, 0x00000000, 0x00000000, 0x03E00008, 0x00000000
-        };
-
-        static readonly uint[] OsWritebackDCache = new uint[]
-        {
-            0x18A00011, 0x00000000, 0x240B2000, 0x00AB082B, 0x1020000F, 0x00000000, 0x00804025, 0x00854821,
-            0x0109082B, 0x10200008, 0x00000000, 0x310A000F, 0x2529FFF0, 0x010A4023, 0xBD190000, 0x0109082B,
-            0x1420FFFD, 0x25080010, 0x03E00008, 0x00000000, 0x3C088000, 0x010B4821, 0x2529FFF0, 0xBD010000,
-            0x0109082B, 0x1420FFFD, 0x25080010, 0x03E00008, 0x00000000
-        };
-
-        static readonly uint[] OsWritebackDCache2 = new uint[]
-        {
-            0x18A00011, 0x00000000, 0x240F2000, 0x00AF082B, 0x1020000F, 0x00000000, 0x00806025, 0x00856821,
-            0x018D082B, 0x10200008, 0x00000000, 0x25ADFFF0, 0x318E000F, 0x018E6023, 0xBD990000, 0x018D082B,
-            0x1420FFFD, 0x258C0010, 0x03E00008, 0x00000000, 0x3C0C8000, 0x018F6821, 0x25ADFFF0, 0xBD810000,
-            0x018D082B, 0x1420FFFD, 0x258C0010, 0x03E00008, 0x00000000
-        };
-
-        static readonly uint[] OsInvalDCache = new uint[]
-        {
-            0x18A0001F, 0x00000000, 0x240B2000, 0x00AB082B, 0x1020001D, 0x00000000, 0x00804025, 0x00854821,
-            0x0109082B, 0x10200016, 0x00000000, 0x310A000F, 0x11400007, 0x2529FFF0, 0x010A4023, 0xBD150000,
-            0x0109082B, 0x1020000E, 0x00000000, 0x25080010, 0x312A000F, 0x11400006, 0x00000000, 0x012A4823,
-            0xBD350010, 0x0128082B, 0x14200005, 0x00000000, 0xBD110000, 0x0109082B, 0x1420FFFD, 0x25080010,
-            0x03E00008, 0x00000000, 0x3C088000, 0x010B4821, 0x2529FFF0, 0xBD010000, 0x0109082B, 0x1420FFFD,
-            0x25080010, 0x03E00008, 0x00000000
-        };
-
-        static readonly uint[] OsInvalDCache2 = new uint[]
-        {
-            0x18A00020, 0x00000000, 0x240F2000, 0x00AF082B, 0x1020001E, 0x00000000, 0x00806025, 0x00856821,
-            0x018D082B, 0x10200017, 0x00000000, 0x25ADFFF0, 0x318E000F, 0x11C00007, 0x00000000, 0x018E6023,
-            0xBD950000, 0x018D082B, 0x1020000E, 0x00000000, 0x258C0010, 0x31AE000F, 0x11C00006, 0x00000000,
-            0x01AE6823, 0xBDB50010, 0x01AC082B, 0x14200005, 0x00000000, 0xBD910000, 0x018D082B, 0x1420FFFD,
-            0x258C0010, 0x03E00008, 0x00000000, 0x3C0C8000, 0x018F6821, 0x25ADFFF0, 0xBD810000, 0x018D082B,
-            0x1420FFFD, 0x258C0010, 0x03E00008, 0x00000000, 0x18A00011, 0x00000000, 0x240F4000, 0x00AF082B,
-            0x1020000F, 0x00000000, 0x00806025, 0x00856821, 0x018D082B, 0x10200008, 0x00000000, 0x25ADFFE0,
-            0x318E001F, 0x018E6023, 0xBD900000, 0x018D082B, 0x1420FFFD, 0x258C0020, 0x03E00008, 0x00000000,
-            0x3C0C8000, 0x018F6821, 0x25ADFFE0, 0xBD800000, 0x018D082B, 0x1420FFFD, 0x258C0020, 0x03E00008,
-            0x00000000
+            new MaskPair(0x00000023, 0x03FFF800), // SUBU     T0, T0, T2              SUBU     __, __, __
+            new MaskPair(0xBC150000, 0x03E00000), // CACHE    (D, CacheBarrier), T0, 0x0000 CACHE    (D, CacheBarrier), __, 0x0000
+            new MaskPair(0x0000002B, 0x03FFF800), // SLTU     AT, T0, T1              SLTU     __, __, __
+            new MaskPair(0x1000000E, 0x03E00000), // BEQ      R0, 0x38(AT)            BEQ      R0, 0x38(__)
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
+            new MaskPair(0x24000010, 0x03FF0000), // ADDIU    T0, T0, 0x0010          ADDIU    __, __, 0x0010
+            new MaskPair(0x3000000F, 0x03FF0000), // ANDI     T2, T1, 0x000F          ANDI     __, __, 0x000F
+            new MaskPair(0x10000006, 0x03E00000), // BEQ      R0, 0x18(T2)            BEQ      R0, 0x18(__)
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
+            new MaskPair(0x00000023, 0x03FFF800), // SUBU     T1, T1, T2              SUBU     __, __, __
+            new MaskPair(0xBC150010, 0x03E00000), // CACHE    (D, CacheBarrier), T1, 0x0040 CACHE    (D, CacheBarrier), __, 0x0040
+            new MaskPair(0x0000002B, 0x03FFF800), // SLTU     AT, T1, T0              SLTU     __, __, __
+            new MaskPair(0x14000005, 0x03E00000), // BNE      R0, 0x14(AT)            BNE      R0, 0x14(__)
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
+            new MaskPair(0xBC110000, 0x03E00000), // CACHE    (D, IHitInvalidate), T0, 0x0000 CACHE    (D, IHitInvalidate), __, 0x0000
+            new MaskPair(0x0000002B, 0x03FFF800), // SLTU     AT, T0, T1              SLTU     __, __, __
+            new MaskPair(0x1400FFFD, 0x03E00000), // BNE      R0, 0xFFFFFFF4(AT)      BNE      R0, 0xFFFFFFF4(__)
+            new MaskPair(0x24000010, 0x03FF0000), // ADDIU    T0, T0, 0x0010          ADDIU    __, __, 0x0010
+            new MaskPair(0x03E00008, 0x00000000), // JR       RA                      JR       RA
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
+            new MaskPair(0x3C008000, 0x001F0000), // LUI      T0, 0x8000              LUI      __, 0x8000
+            new MaskPair(0x00000021, 0x03FFF800), // ADDU     T1, T0, T3              ADDU     __, __, __
+            new MaskPair(0x2400FFF0, 0x03FF0000), // ADDIU    T1, T1, 0xFFF0          ADDIU    __, __, 0xFFF0
+            new MaskPair(0xBC010000, 0x03E00000), // CACHE    (D), T0, 0x0000         CACHE    (D), __, 0x0000
+            new MaskPair(0x0000002B, 0x03FFF800), // SLTU     AT, T0, T1              SLTU     __, __, __
+            new MaskPair(0x1400FFFD, 0x03E00000), // BNE      R0, 0xFFFFFFF4(AT)      BNE      R0, 0xFFFFFFF4(__)
+            new MaskPair(0x24000010, 0x03FF0000), // ADDIU    T0, T0, 0x0010          ADDIU    __, __, 0x0010
+            new MaskPair(0x03E00008, 0x00000000), // JR       RA                      JR       RA
+            new MaskPair(0x00000000, 0x00000000), // NOP                              NOP
         };
 
         static bool IsVAddr(uint addr)
@@ -164,7 +224,14 @@ namespace MIPSInterpreter
 
         static SortedSet<int> FindAllJumpsTo(uint[] mem, uint[] data)
         {
-            return FindAllJumpsTo(mem, IndicesOf(mem, data));
+            var indices = IndicesOf(mem, data);
+            return FindAllJumpsTo(mem, indices);
+        }
+
+        static SortedSet<int> FindAllJumpsTo(uint[] mem, MaskPair[] data)
+        {
+            var indices = IndicesOf(mem, data);
+            return FindAllJumpsTo(mem, indices);
         }
 
         static int CountJumps(uint[] mem, int regionStart, int regionEnd)
@@ -223,23 +290,17 @@ namespace MIPSInterpreter
         public DecompManager(uint[] mem)
         {
             SortedSet<int> osGetCountJumps = FindAllJumpsTo(mem, OsGetCount);
-            var disableOff = IndicesOf(mem, OsDisableInt);
-            foreach (int off in IndicesOf(mem, OsDisableInt2))
+            var disableOff = new List<int>();
+            foreach (int off in IndicesOf(mem, OsDisableInt))
             {
+                disableOff.Add(off);
+                // sometimes there is a bit of a prologue before
+                // TODO: Verify there are no tiny function in [off-4, off] area
                 disableOff.Add(off - 4);
             }
-            foreach (int off in IndicesOf(mem, OsDisableInt3))
-            {
-                disableOff.Add(off - 3);
-            }
-            SortedSet<int> osDisableIntJumps = FindAllJumpsTo(mem, disableOff);
 
-            var restoreOff = IndicesOf(mem, OsRestoreInt);
-            foreach (int off in IndicesOf(mem, OsRestoreInt2))
-            {
-                restoreOff.Add(off);
-            }
-            SortedSet<int> osRestoreIntJumps = FindAllJumpsTo(mem, restoreOff);
+            SortedSet<int> osDisableIntJumps = FindAllJumpsTo(mem, disableOff);
+            SortedSet<int> osRestoreIntJumps = FindAllJumpsTo(mem, OsRestoreInt);
             // Discover all osGetTime function that look like calls to 3 functions
             // OSTime osGetTime()
             // {
@@ -271,17 +332,19 @@ namespace MIPSInterpreter
                 catch (Exception) { }
             }
 
-            var writebackOff = IndicesOf(mem, OsWritebackDCache);
-            foreach (int off in IndicesOf(mem, OsWritebackDCache2))
+            var writebackDCacheOff = new List<int>();
+            foreach (int off in IndicesOf(mem, OsWritebackDCache))
             {
-                writebackOff.Add(off);
+                writebackDCacheOff.Add(off - 0xd);
             }
-            SortedSet<int> osWritebackDCacheJumps = FindAllJumpsTo(mem, writebackOff);
+            SortedSet<int> osWritebackDCacheJumps = FindAllJumpsTo(mem, writebackDCacheOff);
 
-            var invalOff = IndicesOf(mem, OsInvalDCache);
-            foreach (int off in IndicesOf(mem, OsInvalDCache2))
+            var invalOff = new List<int>();
+            foreach (int off in IndicesOf(mem, OsInvalDCache))
             {
-                invalOff.Add(off);
+                // sometimes there is an extra NOP inserted
+                invalOff.Add(off - 0xe);
+                invalOff.Add(off - 0xf);
             }
             SortedSet<int> osInvalDCacheJumps = FindAllJumpsTo(mem, invalOff);
 
